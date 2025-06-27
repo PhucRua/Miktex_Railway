@@ -51,10 +51,6 @@ COPY . .
 # Tạo thư mục tạm để xử lý file
 RUN mkdir -p /tmp/tikz_temp && chmod 777 /tmp/tikz_temp
 
-# Test comprehensive TikZ với nhiều features
-RUN echo '\documentclass{standalone}\usepackage{tikz}\usepackage{pgfplots}\usetikzlibrary{arrows,decorations,positioning,shapes}\begin{document}\begin{tikzpicture}\draw[->] (0,0) -- (2,0);\draw (1,1) circle (0.5);\node at (1,0.5) {OK};\end{tikzpicture}\end{document}' > /tmp/test.tex && \
-    cd /tmp && pdflatex test.tex && convert -density 150 test.pdf test.png && rm -f test.*
-
 # Expose port
 EXPOSE 8000
 
