@@ -193,29 +193,33 @@ def check_tex_installation():
     
     try:
         # Kiểm tra pdflatex
-        result = subprocess.run(['pdflatex', '--version'], capture_output=True, text=True)
+        result = subprocess.run(['pdflatex', '--version'], capture_output=True, text=True, timeout=10)
         info['pdflatex'] = "available" if result.returncode == 0 else "not available"
         
         # Kiểm tra kpsewhich cho TikZ
-        result = subprocess.run(['kpsewhich', 'tikz.sty'], capture_output=True, text=True)
+        result = subprocess.run(['kpsewhich', 'tikz.sty'], capture_output=True, text=True, timeout=5)
         info['tikz_package'] = "found" if result.returncode == 0 else "not found"
         
         # Kiểm tra pgfplots
-        result = subprocess.run(['kpsewhich', 'pgfplots.sty'], capture_output=True, text=True)
+        result = subprocess.run(['kpsewhich', 'pgfplots.sty'], capture_output=True, text=True, timeout=5)
         info['pgfplots_package'] = "found" if result.returncode == 0 else "not found"
         
         # Kiểm tra một số TikZ libraries
         libraries = ['arrows', 'decorations', 'positioning', 'shapes']
         found_libraries = []
         for lib in libraries:
-            result = subprocess.run(['kpsewhich', f'tikzlibrary{lib}.code.tex'], capture_output=True, text=True)
-            if result.returncode == 0:
-                found_libraries.append(lib)
+            try:
+                result = subprocess.run(['kpsewhich', f'tikzlibrary{lib}.code.tex'], 
+                                      capture_output=True, text=True, timeout=3)
+                if result.returncode == 0:
+                    found_libraries.append(lib)
+            except:
+                pass
         
         info['tikz_libraries'] = found_libraries
         
         # Kiểm tra ImageMagick
-        result = subprocess.run(['convert', '--version'], capture_output=True, text=True)
+        result = subprocess.run(['convert', '--version'], capture_output=True, text=True, timeout=5)
         info['imagemagick'] = "available" if result.returncode == 0 else "not available"
         
     except Exception as e:
@@ -229,6 +233,8 @@ async def root():
         "message": "TikZ Compiler API", 
         "version": "1.0.0",
         "build": "Ubuntu TeXLive (Stable)",
+        "status": "running",
+        "port": os.getenv("PORT", "8000"),
         "endpoints": {
             "/compile": "POST - Biên dịch TikZ code",
             "/health": "GET - Kiểm tra trạng thái",
@@ -254,10 +260,17 @@ async def health_check():
         return {
             "status": "healthy" if is_healthy else "unhealthy",
             "build_type": "Ubuntu TeXLive (Stable)",
+            "port": os.getenv("PORT", "8000"),
+            "ready": True,
             **tex_info
         }
     except Exception as e:
-        return {"status": "unhealthy", "error": str(e)}
+        return {
+            "status": "unhealthy", 
+            "error": str(e),
+            "ready": False,
+            "port": os.getenv("PORT", "8000")
+        }
 
 @app.post("/compile", response_model=CompileResponse)
 async def compile_tikz(request: TikZRequest):
@@ -326,4 +339,6 @@ async def compile_tikz_file(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Railway expects PORT environment variable
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
