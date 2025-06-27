@@ -68,14 +68,12 @@ LATEX_TEMPLATE = r"""
     matrix,
     trees,
     automata,
-    er,
     circuits,
-    circuits.ee.IEC,
     3d
 }}
 
 % Set pgfplots compatibility
-\pgfplotsset{{compat=newest}}
+\pgfplotsset{{compat=1.16}}
 
 \begin{{document}}
 \begin{{tikzpicture}}
@@ -123,11 +121,13 @@ def compile_latex_to_pdf(latex_file: str, temp_dir: str) -> str:
                                 error_details = line + " " + lines[i+1]
                                 break
                     elif "! Undefined control sequence" in log_content:
-                        error_details = "Undefined control sequence - có thể thiếu package TikZ"
+                        error_details = "Undefined control sequence - có thể thiếu package hoặc library TikZ"
                     elif "! Package tikz Error:" in log_content:
                         error_details = "TikZ package error - kiểm tra syntax TikZ code"
                     elif "! Package pgfplots Error:" in log_content:
                         error_details = "PGFPlots error - kiểm tra plot syntax"
+                    elif "library not found" in log_content.lower():
+                        error_details = "TikZ library not found - thử bỏ một số usetikzlibrary"
                     elif result.stderr:
                         error_details = result.stderr[:300]
             
@@ -204,9 +204,15 @@ def check_tex_installation():
         result = subprocess.run(['kpsewhich', 'pgfplots.sty'], capture_output=True, text=True)
         info['pgfplots_package'] = "found" if result.returncode == 0 else "not found"
         
-        # Kiểm tra TinyTeX nếu có
-        result = subprocess.run(['tlmgr', '--version'], capture_output=True, text=True)
-        info['tinytex'] = "available" if result.returncode == 0 else "not available"
+        # Kiểm tra một số TikZ libraries
+        libraries = ['arrows', 'decorations', 'positioning', 'shapes']
+        found_libraries = []
+        for lib in libraries:
+            result = subprocess.run(['kpsewhich', f'tikzlibrary{lib}.code.tex'], capture_output=True, text=True)
+            if result.returncode == 0:
+                found_libraries.append(lib)
+        
+        info['tikz_libraries'] = found_libraries
         
         # Kiểm tra ImageMagick
         result = subprocess.run(['convert', '--version'], capture_output=True, text=True)
@@ -222,7 +228,7 @@ async def root():
     return {
         "message": "TikZ Compiler API", 
         "version": "1.0.0",
-        "build": "TeXLive + TinyTeX Hybrid",
+        "build": "Ubuntu TeXLive (Stable)",
         "endpoints": {
             "/compile": "POST - Biên dịch TikZ code",
             "/health": "GET - Kiểm tra trạng thái",
@@ -247,7 +253,7 @@ async def health_check():
         
         return {
             "status": "healthy" if is_healthy else "unhealthy",
-            "build_type": "TeXLive + TinyTeX Hybrid",
+            "build_type": "Ubuntu TeXLive (Stable)",
             **tex_info
         }
     except Exception as e:
