@@ -14,35 +14,21 @@ RUN apt-get update && apt-get install -y \
     curl \
     imagemagick \
     ghostscript \
-    perl \
-    xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Cài đặt TeXLive cơ bản + packages cho images và TikZ
+# Cài đặt TeXLive packages (comprehensive but not full)
 RUN apt-get update && apt-get install -y \
     texlive-base \
     texlive-latex-recommended \
     texlive-latex-extra \
     texlive-pictures \
     texlive-fonts-recommended \
+    texlive-fonts-extra \
     texlive-science \
+    texlive-pstricks \
     dvipng \
     dvisvgm \
     && rm -rf /var/lib/apt/lists/*
-
-# Cài đặt TinyTeX làm backup cho missing packages
-RUN wget -qO- "https://yihui.org/tinytex/install-bin-unix.sh" | sh && \
-    /root/.TinyTeX/bin/*/tlmgr install \
-    pgfplots \
-    3d \
-    automata \
-    er \
-    circuits \
-    datavisualization \
-    && /root/.TinyTeX/bin/*/tlmgr path add
-
-# Thêm cả TinyTeX và system TeXLive vào PATH
-ENV PATH="/root/.TinyTeX/bin/x86_64-linux:/usr/bin:$PATH"
 
 # Cấu hình ImageMagick để cho phép PDF conversion
 RUN sed -i 's/<policy domain="coder" rights="none" pattern="PDF" \/>/<policy domain="coder" rights="read|write" pattern="PDF" \/>/g' /etc/ImageMagick-6/policy.xml && \
@@ -66,7 +52,7 @@ COPY . .
 RUN mkdir -p /tmp/tikz_temp && chmod 777 /tmp/tikz_temp
 
 # Test comprehensive TikZ với nhiều features
-RUN echo '\documentclass{standalone}\usepackage{tikz}\usepackage{pgfplots}\usetikzlibrary{arrows,decorations,3d,automata}\begin{document}\begin{tikzpicture}\draw[->] (0,0) -- (2,0);\draw (1,1) circle (0.5);\end{tikzpicture}\end{document}' > /tmp/test.tex && \
+RUN echo '\documentclass{standalone}\usepackage{tikz}\usepackage{pgfplots}\usetikzlibrary{arrows,decorations,positioning,shapes}\begin{document}\begin{tikzpicture}\draw[->] (0,0) -- (2,0);\draw (1,1) circle (0.5);\node at (1,0.5) {OK};\end{tikzpicture}\end{document}' > /tmp/test.tex && \
     cd /tmp && pdflatex test.tex && convert -density 150 test.pdf test.png && rm -f test.*
 
 # Expose port
