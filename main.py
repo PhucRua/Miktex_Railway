@@ -39,14 +39,40 @@ class CompileResponse(BaseModel):
     png_base64: str = None
     file_id: str = None
 
-# Template LaTeX cơ bản
+# Template LaTeX với packages đầy đủ cho TikZ
 LATEX_TEMPLATE = r"""
 \documentclass[border=2pt]{{standalone}}
 \usepackage{{tikz}}
+\usepackage{{pgfplots}}
 \usepackage{{amsmath}}
 \usepackage{{amsfonts}}
 \usepackage{{amssymb}}
-\usetikzlibrary{{arrows,decorations.pathmorphing,backgrounds,positioning,fit,petri,calc,patterns,shapes,plotmarks}}
+\usepackage{{xcolor}}
+\usepackage{{graphicx}}
+
+% Load TikZ libraries phổ biến
+\usetikzlibrary{{
+    arrows,
+    arrows.meta,
+    decorations.pathmorphing,
+    decorations.markings,
+    backgrounds,
+    positioning,
+    fit,
+    calc,
+    patterns,
+    shapes,
+    shapes.geometric,
+    shapes.misc,
+    plotmarks,
+    matrix,
+    trees,
+    automata,
+    3d
+}}
+
+% Set pgfplots compatibility
+\pgfplotsset{{compat=1.16}}
 
 \begin{{document}}
 \begin{{tikzpicture}}
@@ -68,25 +94,48 @@ def create_latex_file(tikz_code: str, temp_dir: str) -> str:
 def compile_latex_to_pdf(latex_file: str, temp_dir: str) -> str:
     """Biên dịch LaTeX thành PDF"""
     try:
-        # Chạy pdflatex
+        # Chạy pdflatex với các options tối ưu
         result = subprocess.run([
             'pdflatex', 
             '-interaction=nonstopmode',
+            '-halt-on-error',
             '-output-directory', temp_dir,
             latex_file
         ], capture_output=True, text=True, timeout=30)
         
         if result.returncode != 0:
-            raise Exception(f"LaTeX compilation failed: {result.stderr}")
+            # Parse LaTeX log để tìm lỗi cụ thể
+            log_file = os.path.join(temp_dir, "tikz.log")
+            error_details = "Unknown LaTeX error"
+            
+            if os.path.exists(log_file):
+                with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    log_content = f.read()
+                    
+                    # Tìm các lỗi phổ biến
+                    if "! LaTeX Error:" in log_content:
+                        lines = log_content.split('\n')
+                        for i, line in enumerate(lines):
+                            if "! LaTeX Error:" in line and i < len(lines) - 1:
+                                error_details = line + " " + lines[i+1]
+                                break
+                    elif "! Undefined control sequence" in log_content:
+                        error_details = "Undefined control sequence - có thể thiếu package TikZ"
+                    elif "! Package tikz Error:" in log_content:
+                        error_details = "TikZ package error - kiểm tra syntax TikZ code"
+                    elif result.stderr:
+                        error_details = result.stderr[:200]
+            
+            raise Exception(f"LaTeX compilation failed: {error_details}")
         
         pdf_file = os.path.join(temp_dir, "tikz.pdf")
         if not os.path.exists(pdf_file):
-            raise Exception("PDF file was not generated")
+            raise Exception("PDF file was not generated - check LaTeX syntax")
         
         return pdf_file
     
     except subprocess.TimeoutExpired:
-        raise Exception("LaTeX compilation timeout")
+        raise Exception("LaTeX compilation timeout (30s) - code quá phức tạp hoặc lỗi infinite loop")
     except Exception as e:
         raise Exception(f"Compilation error: {str(e)}")
 
@@ -138,6 +187,7 @@ async def root():
     return {
         "message": "TikZ Compiler API", 
         "version": "1.0.0",
+        "build": "TinyTeX minimal",
         "endpoints": {
             "/compile": "POST - Biên dịch TikZ code",
             "/health": "GET - Kiểm tra trạng thái",
@@ -157,10 +207,16 @@ async def health_check():
         result = subprocess.run(['convert', '--version'], capture_output=True, text=True)
         convert_available = result.returncode == 0
         
+        # Kiểm tra TinyTeX packages
+        result = subprocess.run(['tlmgr', 'info', 'tikz'], capture_output=True, text=True)
+        tikz_installed = result.returncode == 0
+        
         return {
-            "status": "healthy" if pdflatex_available and convert_available else "unhealthy",
+            "status": "healthy" if all([pdflatex_available, convert_available, tikz_installed]) else "unhealthy",
             "pdflatex": "available" if pdflatex_available else "not available",
-            "imagemagick": "available" if convert_available else "not available"
+            "imagemagick": "available" if convert_available else "not available",
+            "tikz": "installed" if tikz_installed else "not installed",
+            "build_type": "TinyTeX minimal"
         }
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}
