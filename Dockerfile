@@ -5,7 +5,7 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-# Cập nhật package list và cài đặt dependencies
+# Cài đặt Python và basic tools
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
@@ -15,9 +15,10 @@ RUN apt-get update && apt-get install -y \
     imagemagick \
     ghostscript \
     perl \
+    xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Cài đặt TeXLive base + packages cần thiết cho TikZ và images
+# Cài đặt TeXLive cơ bản + packages cho images và TikZ
 RUN apt-get update && apt-get install -y \
     texlive-base \
     texlive-latex-recommended \
@@ -25,22 +26,27 @@ RUN apt-get update && apt-get install -y \
     texlive-pictures \
     texlive-fonts-recommended \
     texlive-science \
-    texlive-pstricks \
-    && rm -rf /var/lib/apt/lists/*
-
-# Cài đặt các packages TeXLive cụ thể cho graphics và TikZ
-RUN apt-get update && apt-get install -y \
-    tex-gyre \
-    texlive-font-utils \
-    texlive-metapost \
     dvipng \
     dvisvgm \
     && rm -rf /var/lib/apt/lists/*
 
+# Cài đặt TinyTeX làm backup cho missing packages
+RUN wget -qO- "https://yihui.org/tinytex/install-bin-unix.sh" | sh && \
+    /root/.TinyTeX/bin/*/tlmgr install \
+    pgfplots \
+    3d \
+    automata \
+    er \
+    circuits \
+    datavisualization \
+    && /root/.TinyTeX/bin/*/tlmgr path add
+
+# Thêm cả TinyTeX và system TeXLive vào PATH
+ENV PATH="/root/.TinyTeX/bin/x86_64-linux:/usr/bin:$PATH"
+
 # Cấu hình ImageMagick để cho phép PDF conversion
 RUN sed -i 's/<policy domain="coder" rights="none" pattern="PDF" \/>/<policy domain="coder" rights="read|write" pattern="PDF" \/>/g' /etc/ImageMagick-6/policy.xml && \
-    sed -i 's/<policy domain="coder" rights="none" pattern="PS" \/>/<policy domain="coder" rights="read|write" pattern="PS" \/>/g' /etc/ImageMagick-6/policy.xml && \
-    sed -i 's/<policy domain="coder" rights="none" pattern="EPS" \/>/<policy domain="coder" rights="read|write" pattern="EPS" \/>/g' /etc/ImageMagick-6/policy.xml
+    sed -i 's/<policy domain="coder" rights="none" pattern="PS" \/>/<policy domain="coder" rights="read|write" pattern="PS" \/>/g' /etc/ImageMagick-6/policy.xml
 
 # Tạo symlink cho python
 RUN ln -s /usr/bin/python3 /usr/bin/python
@@ -59,9 +65,9 @@ COPY . .
 # Tạo thư mục tạm để xử lý file
 RUN mkdir -p /tmp/tikz_temp && chmod 777 /tmp/tikz_temp
 
-# Test installation với TikZ sample
-RUN echo '\documentclass{standalone}\usepackage{tikz}\begin{document}\begin{tikzpicture}\draw (0,0) circle (1);\end{tikzpicture}\end{document}' > /tmp/test.tex && \
-    cd /tmp && pdflatex test.tex && rm -f test.*
+# Test comprehensive TikZ với nhiều features
+RUN echo '\documentclass{standalone}\usepackage{tikz}\usepackage{pgfplots}\usetikzlibrary{arrows,decorations,3d,automata}\begin{document}\begin{tikzpicture}\draw[->] (0,0) -- (2,0);\draw (1,1) circle (0.5);\end{tikzpicture}\end{document}' > /tmp/test.tex && \
+    cd /tmp && pdflatex test.tex && convert -density 150 test.pdf test.png && rm -f test.*
 
 # Expose port
 EXPOSE 8000
