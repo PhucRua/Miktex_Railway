@@ -68,11 +68,14 @@ LATEX_TEMPLATE = r"""
     matrix,
     trees,
     automata,
+    er,
+    circuits,
+    circuits.ee.IEC,
     3d
 }}
 
 % Set pgfplots compatibility
-\pgfplotsset{{compat=1.16}}
+\pgfplotsset{{compat=newest}}
 
 \begin{{document}}
 \begin{{tikzpicture}}
@@ -101,7 +104,7 @@ def compile_latex_to_pdf(latex_file: str, temp_dir: str) -> str:
             '-halt-on-error',
             '-output-directory', temp_dir,
             latex_file
-        ], capture_output=True, text=True, timeout=30)
+        ], capture_output=True, text=True, timeout=45)
         
         if result.returncode != 0:
             # Parse LaTeX log để tìm lỗi cụ thể
@@ -123,8 +126,10 @@ def compile_latex_to_pdf(latex_file: str, temp_dir: str) -> str:
                         error_details = "Undefined control sequence - có thể thiếu package TikZ"
                     elif "! Package tikz Error:" in log_content:
                         error_details = "TikZ package error - kiểm tra syntax TikZ code"
+                    elif "! Package pgfplots Error:" in log_content:
+                        error_details = "PGFPlots error - kiểm tra plot syntax"
                     elif result.stderr:
-                        error_details = result.stderr[:200]
+                        error_details = result.stderr[:300]
             
             raise Exception(f"LaTeX compilation failed: {error_details}")
         
@@ -135,7 +140,7 @@ def compile_latex_to_pdf(latex_file: str, temp_dir: str) -> str:
         return pdf_file
     
     except subprocess.TimeoutExpired:
-        raise Exception("LaTeX compilation timeout (30s) - code quá phức tạp hoặc lỗi infinite loop")
+        raise Exception("LaTeX compilation timeout (45s) - code quá phức tạp hoặc lỗi infinite loop")
     except Exception as e:
         raise Exception(f"Compilation error: {str(e)}")
 
@@ -182,12 +187,42 @@ def file_to_base64(file_path: str) -> str:
     with open(file_path, 'rb') as f:
         return base64.b64encode(f.read()).decode('utf-8')
 
+def check_tex_installation():
+    """Kiểm tra cài đặt TeX và packages"""
+    info = {}
+    
+    try:
+        # Kiểm tra pdflatex
+        result = subprocess.run(['pdflatex', '--version'], capture_output=True, text=True)
+        info['pdflatex'] = "available" if result.returncode == 0 else "not available"
+        
+        # Kiểm tra kpsewhich cho TikZ
+        result = subprocess.run(['kpsewhich', 'tikz.sty'], capture_output=True, text=True)
+        info['tikz_package'] = "found" if result.returncode == 0 else "not found"
+        
+        # Kiểm tra pgfplots
+        result = subprocess.run(['kpsewhich', 'pgfplots.sty'], capture_output=True, text=True)
+        info['pgfplots_package'] = "found" if result.returncode == 0 else "not found"
+        
+        # Kiểm tra TinyTeX nếu có
+        result = subprocess.run(['tlmgr', '--version'], capture_output=True, text=True)
+        info['tinytex'] = "available" if result.returncode == 0 else "not available"
+        
+        # Kiểm tra ImageMagick
+        result = subprocess.run(['convert', '--version'], capture_output=True, text=True)
+        info['imagemagick'] = "available" if result.returncode == 0 else "not available"
+        
+    except Exception as e:
+        info['error'] = str(e)
+    
+    return info
+
 @app.get("/")
 async def root():
     return {
         "message": "TikZ Compiler API", 
         "version": "1.0.0",
-        "build": "TinyTeX minimal",
+        "build": "TeXLive + TinyTeX Hybrid",
         "endpoints": {
             "/compile": "POST - Biên dịch TikZ code",
             "/health": "GET - Kiểm tra trạng thái",
@@ -199,24 +234,21 @@ async def root():
 async def health_check():
     """Kiểm tra trạng thái của API và các dependency"""
     try:
-        # Kiểm tra pdflatex
-        result = subprocess.run(['pdflatex', '--version'], capture_output=True, text=True)
-        pdflatex_available = result.returncode == 0
+        tex_info = check_tex_installation()
         
-        # Kiểm tra ImageMagick convert
-        result = subprocess.run(['convert', '--version'], capture_output=True, text=True)
-        convert_available = result.returncode == 0
+        # Determine overall health
+        critical_components = [
+            tex_info.get('pdflatex') == 'available',
+            tex_info.get('tikz_package') == 'found', 
+            tex_info.get('imagemagick') == 'available'
+        ]
         
-        # Kiểm tra TinyTeX packages
-        result = subprocess.run(['tlmgr', 'info', 'tikz'], capture_output=True, text=True)
-        tikz_installed = result.returncode == 0
+        is_healthy = all(critical_components)
         
         return {
-            "status": "healthy" if all([pdflatex_available, convert_available, tikz_installed]) else "unhealthy",
-            "pdflatex": "available" if pdflatex_available else "not available",
-            "imagemagick": "available" if convert_available else "not available",
-            "tikz": "installed" if tikz_installed else "not installed",
-            "build_type": "TinyTeX minimal"
+            "status": "healthy" if is_healthy else "unhealthy",
+            "build_type": "TeXLive + TinyTeX Hybrid",
+            **tex_info
         }
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}
